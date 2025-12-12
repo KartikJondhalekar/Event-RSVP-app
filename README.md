@@ -74,7 +74,7 @@ This architecture follows **serverless and microservice principles**, minimizing
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-username/event-rsvp-app.git
+   [git clone https://github.com/your-username/event-rsvp-app.git](https://github.com/KartikJondhalekar/Event-RSVP-app)
    ```
     
 2. Open index.html directly in your browser or execute server.js to run it via your favorite code editor
