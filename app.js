@@ -1,9 +1,12 @@
 // Run the app once the page has fully loaded
 document.addEventListener('DOMContentLoaded', initApp);
 
-// Start the app by loading all events
+// Start the app by loading all events and initializing auth UI
 async function initApp() {
     try {
+        // Initialize authentication modals first
+        initAuthModals();
+
         // Initialize authentication UI
         updateUIForAuth();
 

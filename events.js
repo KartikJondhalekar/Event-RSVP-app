@@ -2,73 +2,81 @@
 These call your backend via apiCall() (defined in utils.js).
 If you change your API Gateway URL, only update API_BASE_URL in utils.js (or your config). */
 async function fetchEvents() {
-    return await apiCall('/events');
+  return await apiCall('/events');
 }
 
 async function fetchEventDetails(eventId) {
-    return await apiCall(`/event/${eventId}`);
+  return await apiCall(`/event/${eventId}`);
 }
 
 async function fetchEventStats(eventId) {
-    return await apiCall(`/stats/${eventId}`);
+  return await apiCall(`/stats/${eventId}`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  });
 }
 
 async function fetchEventAttendees(eventId) {
-    return await apiCall(`/attendees/${eventId}`);
-}
-
-/* ===== Show/Hide Add Event Modal ===== */
-function showAddEventModal() {
-    if (!isAdmin()) {
-        showMessage('Only administrators can add events', 'error');
-        return;
-    }
-    document.getElementById('addEventModal').style.display = 'block';
-}
-
-function closeAddEventModal() {
-    document.getElementById('addEventModal').style.display = 'none';
-    document.querySelector('#addEventModal form').reset();
+  return await apiCall(`/attendees/${eventId}`);
 }
 
 /* ===== Handle Add Event Form Submission ===== */
 async function handleAddEvent(event) {
-    event.preventDefault();
-    
-    if (!isAdmin()) {
-        showMessage('Unauthorized: Only admins can create events', 'error');
-        return;
-    }
-    
-    const formData = new FormData(event.target);
-    const eventData = {
-        title: formData.get('title'),
-        description: formData.get('description'),
-        venue: formData.get('venue'),
-        start_at: formData.get('start_at'),
-        banner_url: formData.get('banner_url')
-    };
-    
-    try {
-        const result = await apiCall('/events', {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify(eventData)
-        });
-        
-        showMessage('Event created successfully!', 'success');
-        
-        // Clear the form
-        event.target.reset();
-        closeAddEventModal();
-        
-        // Reload events
-        setTimeout(() => {
-            loadEvents();
-        }, 1000);
-    } catch (error) {
-        showMessage(error.message || 'Failed to create event', 'error');
-    }
+  event.preventDefault();
+
+  if (!isAdmin()) {
+    showTopMessage('Unauthorized: Only admins can create events', 'error');  // ✅
+    return;
+  }
+
+  const formData = new FormData(event.target);
+  const eventData = {
+    title: formData.get('title'),
+    description: formData.get('description'),
+    venue: formData.get('venue'),
+    start_at: formData.get('start_at'),
+    banner_url: formData.get('banner_url')
+  };
+
+  // Show loading
+  const submitBtn = event.target.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Creating...';
+  submitBtn.style.opacity = '0.7';
+
+  try {
+    await apiCall('/events', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(eventData)
+    });
+
+    // Close modal smoothly
+    const modal = document.getElementById('addEventModal');
+    modal.style.transition = 'opacity 0.2s ease-out';
+    modal.style.opacity = '0';
+
+    setTimeout(() => {
+      modal.style.display = 'none';
+      modal.style.opacity = '1';
+      event.target.reset();
+    }, 200);
+
+    // Show success at top with event name ✅
+    showTopMessage(`✓ Event "${eventData.title}" created successfully!`, 'success');
+
+    // Reload events
+    setTimeout(() => loadEvents(), 500);
+
+  } catch (error) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+    submitBtn.style.opacity = '1';
+
+    // Show error at top ✅
+    showTopMessage(error.message || 'Failed to create event', 'error');
+  }
 }
 
 /* ===== Handle RSVP form submission =====
@@ -76,101 +84,127 @@ async function handleAddEvent(event) {
 - Sends the user's RSVP to the backend
 - Shows a success/error message and refreshes modal stats */
 async function submitRSVP(event, eventId) {
-    event.preventDefault();
+  event.preventDefault();
 
-    const formData = new FormData(event.target);
-    const rsvpData = {
-        event_id: eventId,
-        full_name: formData.get('full_name'),
-        email: formData.get('email'),
-        response: formData.get('response')
-    };
+  const formData = new FormData(event.target);
+  const rsvpData = {
+    event_id: eventId,
+    full_name: formData.get('full_name'),
+    email: formData.get('email'),
+    response: formData.get('response')
+  };
 
-    try {
-        const result = await apiCall('/rsvp', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(rsvpData)
-        });
+  // Get event name from modal title
+  const eventTitle = document.querySelector('.modal-title')?.textContent || 'this event';
 
-        showMessage('RSVP submitted successfully!', 'success');
+  // Show loading state on button
+  const submitBtn = event.target.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting...';
+  submitBtn.style.opacity = '0.7';
 
-        // Clear the form
-        event.target.reset();
+  try {
+    const result = await apiCall('/rsvp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(rsvpData)
+    });
 
-        // Wait a bit before refreshing to let user see the success message
-        setTimeout(() => {
-            openEventModal(eventId);
-            loadEventStats(eventId);
-        }, 1000);
-    } catch (error) {
-        // Prefer backend error message (e.g., duplicate RSVP) if available
-        const errorMessage = error.message || 'RSVP failed';
-        showMessage(errorMessage, 'error');
+    // Close modal smoothly
+    const modal = document.getElementById('eventModal');
+    modal.style.transition = 'opacity 0.2s ease-out';
+    modal.style.opacity = '0';
+
+    setTimeout(() => {
+      modal.style.display = 'none';
+      modal.style.opacity = '1'; // Reset for next time
+    }, 200);
+
+    // Show success message at top with event name
+    const responseText = rsvpData.response === 'Yes' ? 'registered for' : 'declined';
+    showTopMessage(`✓ Successfully ${responseText} "${eventTitle}"`, 'success');
+
+    // If admin, silently update stats in background
+    if (isAdmin()) {
+      setTimeout(() => {
+        loadEventStats(eventId);
+      }, 500);
     }
+
+  } catch (error) {
+    // Re-enable button on error
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+    submitBtn.style.opacity = '1';
+
+    // Show error in modal (don't close)
+    const errorMessage = error.message || 'RSVP failed';
+    showMessage(errorMessage, 'error');
+  }
 }
 
 /* ===== Lightweight in-page alert message (success/error) =====
 Inserts a styled message near the RSVP section. */
 function showMessage(message, type) {
-    const existingMessage = document.querySelector('.form-message');
-    if (existingMessage) {
-        existingMessage.remove();
-    }
+  const existingMessage = document.querySelector('.form-message');
+  if (existingMessage) {
+    existingMessage.remove();
+  }
 
-    // Create message element
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `form-message ${type}`;
-    messageDiv.textContent = message;
-    messageDiv.style.padding = '12px 16px';
-    messageDiv.style.margin = '16px 0';
-    messageDiv.style.borderRadius = '8px';
-    messageDiv.style.fontWeight = '500';
-    messageDiv.style.fontSize = '0.95rem';
+  // Create message element
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `form-message ${type}`;
+  messageDiv.textContent = message;
+  messageDiv.style.padding = '12px 16px';
+  messageDiv.style.margin = '16px 0';
+  messageDiv.style.borderRadius = '8px';
+  messageDiv.style.fontWeight = '500';
+  messageDiv.style.fontSize = '0.95rem';
 
-    if (type === 'error') {
-        messageDiv.style.backgroundColor = '#fef2f2';
-        messageDiv.style.color = '#dc2626';
-        messageDiv.style.border = '1px solid #fecaca';
-    } else {
-        messageDiv.style.backgroundColor = '#f0fdf4';
-        messageDiv.style.color = '#16a34a';
-        messageDiv.style.border = '1px solid #bbf7d0';
-    }
+  if (type === 'error') {
+    messageDiv.style.backgroundColor = '#fef2f2';
+    messageDiv.style.color = '#dc2626';
+    messageDiv.style.border = '1px solid #fecaca';
+  } else {
+    messageDiv.style.backgroundColor = '#f0fdf4';
+    messageDiv.style.color = '#16a34a';
+    messageDiv.style.border = '1px solid #bbf7d0';
+  }
 
-    const form = document.querySelector('.rsvp-form');
-    const sectionTitle = form.closest('.section').querySelector('.section-title');
+  const form = document.querySelector('.rsvp-form');
+  const sectionTitle = form.closest('.section').querySelector('.section-title');
 
-    if (sectionTitle) {
-        sectionTitle.parentNode.insertBefore(messageDiv, sectionTitle.nextSibling);
-    } else {
-        form.parentNode.insertBefore(messageDiv, form);
-    }
+  if (sectionTitle) {
+    sectionTitle.parentNode.insertBefore(messageDiv, sectionTitle.nextSibling);
+  } else {
+    form.parentNode.insertBefore(messageDiv, form);
+  }
 
-    if (type === 'success') {
-        setTimeout(() => {
-            if (messageDiv.parentNode) {
-                messageDiv.parentNode.removeChild(messageDiv);
-            }
-        }, 5000);
-    }
+  if (type === 'success') {
+    setTimeout(() => {
+      if (messageDiv.parentNode) {
+        messageDiv.parentNode.removeChild(messageDiv);
+      }
+    }, 5000);
+  }
 }
 
 /* ===== Render the event cards on the homepage grid =====
-Dynamic bits you’ll likely change per project:
+Dynamic bits you'll likely change per project:
 - Card markup (classes and layout)
 - Fallback banner image URL */
 function displayEvents(events) {
-    const grid = document.getElementById('eventsGrid');
+  const grid = document.getElementById('eventsGrid');
 
-    if (events.length === 0) {
-        grid.innerHTML = '<div class="loading">No events found</div>';
-        return;
-    }
+  if (events.length === 0) {
+    grid.innerHTML = '<div class="loading">No events found</div>';
+    return;
+  }
 
-    grid.innerHTML = events.map(event => `
+  grid.innerHTML = events.map(event => `
         <div class="event-card" onclick="openEventModal('${event.event_id}')">
             <div class="event-banner" style="background-image: url('${event.banner_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800'}')"></div> 
             <div class="event-content">
@@ -188,34 +222,121 @@ function displayEvents(events) {
 /* ===== Load and display simple Yes/No counts =====
 // Called from within the modal to keep stats fresh after an RSVP. */
 async function loadEventStats(eventId) {
-    try {
-        const stats = await fetchEventStats(eventId);
-        document.getElementById(`yes-${eventId}`).textContent = stats.Yes || 0;
-        document.getElementById(`no-${eventId}`).textContent = stats.No || 0;
-    } catch (error) {
-        console.error('Error loading stats:', error);
-    }
+  // Only load stats if user is admin
+  if (!isAdmin()) {
+    return;
+  }
+
+  try {
+    const stats = await fetchEventStats(eventId);
+    const yesElement = document.getElementById(`yes-${eventId}`);
+    const noElement = document.getElementById(`no-${eventId}`);
+
+    if (yesElement) yesElement.textContent = stats.Yes || 0;
+    if (noElement) noElement.textContent = stats.No || 0;
+  } catch (error) {
+    console.error('Error loading stats:', error);
+  }
 }
 
+
 /* ===== Open the event details modal =====
-Fetches details, stats, and attendees in parallel for a snappy UX. */
+Checks authentication first, then fetches details.
+Stats only for admins. */
 async function openEventModal(eventId) {
-    try {
-        const modal = document.getElementById('eventModal');
-        const modalContent = document.getElementById('modalContent');
+  // Check if user is logged in FIRST
+  if (!isAuthenticated()) {
+    // User not logged in - show message and prompt to login
+    showTopMessage('Please login or register to view event details and RSVP', 'info');
 
-        modalContent.innerHTML = '<div class="loading">Loading event details...</div>';
-        modal.style.display = 'block';
+    // Wait a moment then open login modal
+    setTimeout(() => {
+      showAuthModal('login');
+    }, 500);
 
-        const [event, stats, attendees] = await Promise.all([
-            fetchEventDetails(eventId),
-            fetchEventStats(eventId),
-            fetchEventAttendees(eventId)
-        ]);
+    return; // Stop here - don't open event modal
+  }
 
-        const banner = event.banner_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200'; // Fallback banner image if none provided by the event record
+  // User is logged in - proceed as normal
+  try {
+    const modal = document.getElementById('eventModal');
+    const modalContent = document.getElementById('modalContent');
 
-        modalContent.innerHTML = `
+    modalContent.innerHTML = '<div class="loading">Loading event details...</div>';
+    modal.style.display = 'block';
+
+    // Fetch event details and attendees for all users
+    // Stats only for admins
+    const userIsAdmin = isAdmin();
+
+    let event, attendees, stats = null;
+
+    if (userIsAdmin) {
+      // Admin: Fetch everything including stats
+      [event, attendees, stats] = await Promise.all([
+        fetchEventDetails(eventId),
+        fetchEventAttendees(eventId),
+        fetchEventStats(eventId)
+      ]);
+    } else {
+      // Regular user: Skip stats
+      [event, attendees] = await Promise.all([
+        fetchEventDetails(eventId),
+        fetchEventAttendees(eventId)
+      ]);
+    }
+
+    const banner = event.banner_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200';
+
+    // Build stats section only for admins
+    const statsSection = userIsAdmin ? `
+            <div class="section rsvp-section">
+              <h2 class="section-title">Event Statistics (Admin Only)</h2>
+                <!-- Full-width stats bar -->
+                <div class="stats-bar">
+                  <div class="stat-card yes-card">
+                    <span class="stat-number" id="yes-${eventId}">${stats.Yes || 0}</span>
+                    <span class="stat-label">Yes Responses</span>
+                  </div>
+                  <div class="stat-card no-card">
+                    <span class="stat-number" id="no-${eventId}">${stats.No || 0}</span>
+                    <span class="stat-label">No Responses</span>
+                  </div>
+                </div>
+
+              <!-- Simple Attendees Table -->
+              <div class="attendees-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Going</th>
+                      <th>Not Going</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>
+                        ${attendees
+        .filter(a => a.response.toLowerCase() === 'yes')
+        .map(a => `<div>${a.full_name}</div>`)
+        .join('') || '<em>No confirmed attendees yet.</em>'
+      }
+                      </td>
+                      <td>
+                        ${attendees
+        .filter(a => a.response.toLowerCase() === 'no')
+        .map(a => `<div>${a.full_name}</div>`)
+        .join('') || '<em>No declines yet.</em>'
+      }
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+        ` : '';
+
+    modalContent.innerHTML = `
       <div class="modal-banner" style="background-image:url('${banner}')"></div>
 
       <div class="modal-header">
@@ -256,55 +377,12 @@ async function openEventModal(eventId) {
           </form>
         </div>
 
-        <!-- Event Statistics (Yes/No bar + Attendees) -->
-        <div class="section rsvp-section">
-          <h2 class="section-title">Event Statistics</h2>
-            <!-- Full-width stats bar -->
-            <div class="stats-bar">
-              <div class="stat-card yes-card">
-                <span class="stat-number">${stats.Yes || 0}</span>
-                <span class="stat-label">Yes Responses</span>
-              </div>
-              <div class="stat-card no-card">
-                <span class="stat-number">${stats.No || 0}</span>
-                <span class="stat-label">No Responses</span>
-              </div>
-            </div>
-
-          <!-- Simple Attendees Table -->
-          <div class="attendees-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Going</th>
-                  <th>Not Going</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    ${attendees
-                .filter(a => a.response.toLowerCase() === 'yes')
-                .map(a => `<div>${a.full_name}</div>`)
-                .join('') || '<em>No confirmed attendees yet.</em>'
-            }
-                  </td>
-                  <td>
-                    ${attendees
-                .filter(a => a.response.toLowerCase() === 'no')
-                .map(a => `<div>${a.full_name}</div>`)
-                .join('') || '<em>No declines yet.</em>'
-            }
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <!-- Event Statistics (Admin Only) -->
+        ${statsSection}
       </div>
     `;
-    } catch (error) {
-        document.getElementById('modalContent').innerHTML =
-            `<div class="error">Error loading event details: ${error.message}</div>`;
-    }
+  } catch (error) {
+    document.getElementById('modalContent').innerHTML =
+      `<div class="error">Error loading event details: ${error.message}</div>`;
+  }
 }

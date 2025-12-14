@@ -18,21 +18,31 @@
             <div class="auth-section" id="authSection"></div>
         </div>
 
+        <!-- Admin: Add Event Button -->
+        <div class="admin-only" style="text-align: center; margin-bottom: 30px;">
+            <button class="add-event-btn" onclick="showAddEventModal()">
+                ➕ Add New Event
+            </button>
+        </div>
+
         <div class="events-grid" id="eventsGrid">
             <div class="loading"> Loading events... </div>
         </div>
 
-        <!-- Event Modal -->
-        <div class="modal" id="eventModal">index
+        <!-- Event Modal (existing one - keep this) -->
+        <div class="modal" id="eventModal">
             <button class="close-btn" id="closeModal" onclick="closeModal()">X</button>
             <div class="modal-content" id="modalContent">
                 <!-- Modal content will be loaded here -->
             </div>
         </div>
 
-        <script src="utils.js"></script>
-        <script src="events.js"></script>
-        <script src="app.js"></script>
+        <!-- Modals will be injected here by JavaScript -->
+
+        <script src="utils.js"></script> <!-- ✅ Load FIRST - has shared functions -->
+        <script src="auth.js"></script> <!-- ✅ Can now use showTopMessage -->
+        <script src="events.js"></script> <!-- ✅ Can now use showTopMessage -->
+        <script src="app.js"></script> <!-- ✅ Calls everything -->
 </body>
 
 </html>
