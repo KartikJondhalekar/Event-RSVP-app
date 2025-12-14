@@ -31,6 +31,7 @@ body {
     padding: 28px 24px;
     border-radius: 16px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    position: relative;
 }
 
 .header h1 {
@@ -44,6 +45,81 @@ body {
     color: #fff;
     font-size: 1.2rem;
     opacity: 1;
+}
+
+/* Authentication Section */
+.auth-section {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.auth-btn {
+    background: #FF9900;
+    color: #232F3E;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.auth-btn:hover {
+    transform: translateY(-2px);
+    background: #ec8b00;
+}
+
+.logout-btn {
+    background: #e74c3c;
+}
+
+.logout-btn:hover {
+    background: #c0392b;
+}
+
+.user-name {
+    color: #fff;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.admin-badge {
+    background: #27ae60;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+/* Add Event Button */
+.add-event-btn {
+    background: #27ae60;
+    color: #fff;
+    border: none;
+    padding: 15px 40px;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
+}
+
+.add-event-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(39, 174, 96, 0.4);
+}
+
+/* Hide elements by default */
+.admin-only,
+.auth-required {
+    display: none;
 }
 
 

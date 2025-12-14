@@ -17,6 +17,60 @@ async function fetchEventAttendees(eventId) {
     return await apiCall(`/attendees/${eventId}`);
 }
 
+/* ===== Show/Hide Add Event Modal ===== */
+function showAddEventModal() {
+    if (!isAdmin()) {
+        showMessage('Only administrators can add events', 'error');
+        return;
+    }
+    document.getElementById('addEventModal').style.display = 'block';
+}
+
+function closeAddEventModal() {
+    document.getElementById('addEventModal').style.display = 'none';
+    document.querySelector('#addEventModal form').reset();
+}
+
+/* ===== Handle Add Event Form Submission ===== */
+async function handleAddEvent(event) {
+    event.preventDefault();
+    
+    if (!isAdmin()) {
+        showMessage('Unauthorized: Only admins can create events', 'error');
+        return;
+    }
+    
+    const formData = new FormData(event.target);
+    const eventData = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        venue: formData.get('venue'),
+        start_at: formData.get('start_at'),
+        banner_url: formData.get('banner_url')
+    };
+    
+    try {
+        const result = await apiCall('/events', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(eventData)
+        });
+        
+        showMessage('Event created successfully!', 'success');
+        
+        // Clear the form
+        event.target.reset();
+        closeAddEventModal();
+        
+        // Reload events
+        setTimeout(() => {
+            loadEvents();
+        }, 1000);
+    } catch (error) {
+        showMessage(error.message || 'Failed to create event', 'error');
+    }
+}
+
 /* ===== Handle RSVP form submission =====
 - Prevents page reload
 - Sends the user's RSVP to the backend

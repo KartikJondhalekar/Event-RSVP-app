@@ -4,6 +4,10 @@ document.addEventListener('DOMContentLoaded', initApp);
 // Start the app by loading all events
 async function initApp() {
     try {
+        // Initialize authentication UI
+        updateUIForAuth();
+
+        // Load events
         await loadEvents();
     } catch (error) {
         document.getElementById('eventsGrid').innerHTML =
