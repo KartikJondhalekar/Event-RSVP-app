@@ -1,4 +1,6 @@
 import mysql from 'mysql2/promise';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import {
     DynamoDBClient,
     BatchGetItemCommand,
@@ -7,8 +9,31 @@ import {
     QueryCommand,
     TransactWriteItemsCommand
 } from '@aws-sdk/client-dynamodb';
+import { randomUUID } from 'crypto';
 
 const dynamodb = new DynamoDBClient({ region: process.env.REGION });
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
+// ===== JWT Token Validation Middleware =====
+function verifyToken(authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        throw new Error('No token provided');
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        return jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        throw new Error('Invalid or expired token');
+    }
+}
+
+// ===== Check if user is admin =====
+function requireAdmin(user) {
+    if (!user || user.role !== 'admin') {
+        throw new Error('Unauthorized: Admin access required');
+    }
+}
 
 export const handler = async (event) => {
     console.log('Received event:', JSON.stringify(event, null, 2));
@@ -18,18 +43,10 @@ export const handler = async (event) => {
     const pathParams = event.pathParameters || {};
     const queryParams = event.queryStringParameters || {};
     const body = event.body ? JSON.parse(event.body) : {};
+    const authHeader = event.headers?.authorization || event.headers?.Authorization;
 
     if (method === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, X-Amz-Date, Authorization, X-Api-Key, X-Amz-Security-Token, X-Requested-With',
-                'Access-Control-Allow-Credentials': true
-            },
-            body: '',
-        };
+        return json({}, 200);
     }
 
     const conn = await mysql.createConnection({
@@ -40,6 +57,114 @@ export const handler = async (event) => {
     });
 
     try {
+        // ============ POST /auth/register ============
+        if (method === 'POST' && path === '/auth/register') {
+            const { email, password, full_name } = body;
+
+            if (!email || !password || !full_name) {
+                return json({ message: 'Email, password, and full name are required' }, 400);
+            }
+
+            // Check if user already exists
+            const [existingUsers] = await conn.execute(
+                'SELECT user_id FROM users WHERE email = ?',
+                [email]
+            );
+
+            if (existingUsers.length > 0) {
+                return json({ message: 'User already exists with this email' }, 400);
+            }
+
+            // Hash password
+            const passwordHash = await bcrypt.hash(password, 10);
+            const userId = randomUUID();
+
+            // Insert new user
+            await conn.execute(
+                'INSERT INTO users (user_id, email, password_hash, full_name, role) VALUES (?, ?, ?, ?, ?)',
+                [userId, email, passwordHash, full_name, 'user']
+            );
+
+            return json({
+                message: 'User registered successfully',
+                user_id: userId
+            }, 201);
+        }
+
+        // ============ POST /auth/login ============
+        if (method === 'POST' && path === '/auth/login') {
+            const { email, password } = body;
+
+            if (!email || !password) {
+                return json({ message: 'Email and password are required' }, 400);
+            }
+
+            // Get user
+            const [users] = await conn.execute(
+                'SELECT user_id, email, password_hash, full_name, role FROM users WHERE email = ?',
+                [email]
+            );
+
+            if (users.length === 0) {
+                return json({ message: 'Invalid email or password' }, 401);
+            }
+
+            const user = users[0];
+
+            // Verify password
+            const isValidPassword = await bcrypt.compare(password, user.password_hash);
+            if (!isValidPassword) {
+                return json({ message: 'Invalid email or password' }, 401);
+            }
+
+            // Generate JWT token
+            const token = jwt.sign(
+                {
+                    user_id: user.user_id,
+                    email: user.email,
+                    role: user.role
+                },
+                JWT_SECRET,
+                { expiresIn: '7d' }
+            );
+
+            return json({
+                message: 'Login successful',
+                user: {
+                    user_id: user.user_id,
+                    email: user.email,
+                    full_name: user.full_name,
+                    role: user.role,
+                    token: token
+                }
+            });
+        }
+
+        // ============ POST /events (Admin only - Create event) ============
+        if (method === 'POST' && path === '/events') {
+            const userData = verifyToken(authHeader);
+            requireAdmin(userData);
+
+            const { title, description, venue, start_at, banner_url } = body;
+
+            if (!title || !venue || !start_at) {
+                return json({ message: 'Title, venue, and start_at are required' }, 400);
+            }
+
+            const eventId = randomUUID();
+
+            await conn.execute(
+                `INSERT INTO events (event_id, title, description, venue, start_at, banner_url, created_by) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [eventId, title, description, venue, start_at, banner_url, userData.user_id]
+            );
+
+            return json({
+                message: 'Event created successfully',
+                event_id: eventId
+            }, 201);
+        }
+
         // ============ GET /events/{event_id} ============
         if (method === 'GET' && path.startsWith("/event/")) {
             const eventId = pathParams.event_id;
@@ -52,10 +177,13 @@ export const handler = async (event) => {
             return json(rows[0]);
         }
 
-        // ============ GET /stats/{event_id} ============
+        // ============ GET /stats/{event_id} (Admin only) ============
         if (method === 'GET' && path.startsWith("/stats/")) {
+            const userData = verifyToken(authHeader);
+            requireAdmin(userData);
+
             const eventId = pathParams.event_id;
-            console.log('Getting stats for::', eventId);
+            console.log('Getting stats for:', eventId);
 
             const responses = ['Yes', 'No'];
             const keys = responses.map(r => ({
@@ -93,8 +221,6 @@ export const handler = async (event) => {
             const now = Date.now();
 
             try {
-                // 1) Put the attendee record IF it doesn't already exist
-                // 2) Increment the right counter (Yes/No) atomically
                 await dynamodb.send(new TransactWriteItemsCommand({
                     TransactItems: [
                         {
@@ -102,7 +228,7 @@ export const handler = async (event) => {
                                 TableName: "event-rsvp-responses",
                                 Item: {
                                     pk: { S: `EVENT#${event_id}` },
-                                    sk: { S: `RESPONDENT#${email}` }, //uniqueness per event + email
+                                    sk: { S: `RESPONDENT#${email}` },
                                     full_name: { S: full_name },
                                     email: { S: email },
                                     response: { S: response },
@@ -130,7 +256,6 @@ export const handler = async (event) => {
 
             } catch (err) {
                 if (err.name === "TransactionCanceledException" || err.name === "ConditionalCheckFailedException") {
-                    // Put failed because RESPONDENT already exists
                     return json({
                         message: "You have already RSVP'd for this event with this email.",
                         code: "DUPLICATE_RSVP"
@@ -144,19 +269,13 @@ export const handler = async (event) => {
         // ============ GET /attendees/{event_id} ============
         if (method === 'GET' && path.startsWith("/attendees/")) {
             const eventId = pathParams.event_id;
-            const responseType = queryParams.resonse; // Optional filter
+            const responseType = queryParams.response;
 
             let keyCondition = "pk = :pk AND begins_with(sk, :prefix)";
             let expressionValues = {
                 ":pk": { S: `EVENT#${eventId}` },
                 ":prefix": { S: "RESPONDENT#" }
             };
-
-            // Filter by response type if provided
-            if (responseType) {
-                keyCondition = "pk = :pk AND begins_with(sk, :prefix)";
-                expressionValues[":prefix"] = { S: `RESPONDENT#` };
-            }
 
             const result = await dynamodb.send(new QueryCommand({
                 TableName: "event-rsvp-responses",
@@ -171,7 +290,6 @@ export const handler = async (event) => {
                 timestamp: parseInt(item.timestamp?.N)
             }));
 
-            // Filter by response type if specified
             if (responseType) {
                 attendees = attendees.filter(a => a.response === responseType);
             }
@@ -183,10 +301,10 @@ export const handler = async (event) => {
         if (method === 'GET' && path === '/events') {
             console.log('Getting all events');
             const [rows] = await conn.execute(`
-        SELECT event_id, title, description, start_at, venue, banner_url, created_at
-        FROM events
-        ORDER BY start_at ASC
-      `);
+                SELECT event_id, title, description, start_at, venue, banner_url, created_at
+                FROM events
+                ORDER BY start_at ASC
+            `);
             return json(rows);
         }
 
@@ -195,6 +313,12 @@ export const handler = async (event) => {
 
     } catch (err) {
         console.error('Error:', err);
+
+        // Handle specific authentication errors
+        if (err.message.includes('token') || err.message.includes('Unauthorized')) {
+            return json({ error: err.message }, 401);
+        }
+
         return json({ error: err.message }, 500);
     } finally {
         if (conn) await conn.end();
@@ -209,7 +333,7 @@ function json(data, statusCode = 200) {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, X-Amz-Date, Authorization, X-Api-Key, X-Amz-Security-Token, X-Requested-With',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token, X-Requested-With',
             'Access-Control-Allow-Credentials': true
         },
         body: JSON.stringify(data)
