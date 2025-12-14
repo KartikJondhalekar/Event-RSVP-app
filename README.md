@@ -47,10 +47,10 @@ A modern, full-stack **Event RSVP platform** with **Role-Based Access Control** 
 │    Lambda    │  Serverless Compute (Node.js)
 └───┬──────┬───┘
     │      │
-┌───▼──┐ ┌─▼────────┐
-│ RDS  │ │ DynamoDB │
-│MySQL │ │  NoSQL   │
-└──────┘ └──────────┘
+┌───▼───┐ ┌─▼────────┐
+│  RDS  │ │ DynamoDB │
+│ MySQL │ │  NoSQL   │
+└───────┘ └──────────┘
 ```
 
 **Design Principles:**
